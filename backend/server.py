@@ -105,9 +105,6 @@ LANGUAGE_CODES = {
 # =========================================================
 # HOME
 # =========================================================
-# This now opens the FRONTEND instead of returning JSON.
-# Therefore frontend + backend use ONE public URL.
-# =========================================================
 
 @app.route("/")
 def home():
@@ -180,21 +177,15 @@ def predict():
             }), 400
 
 
-        # Convert text into ML features
-
         features = vectorizer.transform(
             [text]
         )
 
 
-        # Predict language
-
         prediction = model.predict(
             features
         )[0]
 
-
-        # Calculate confidence
 
         if hasattr(
             model,
@@ -242,7 +233,6 @@ def predict():
             error
         )
 
-
         return jsonify({
 
             "success": False,
@@ -264,14 +254,10 @@ def extract_text_from_file(file):
     )
 
 
-    # -----------------------------------------------------
     # TXT
-    # -----------------------------------------------------
-
     if filename.endswith(".txt"):
 
         content = file.read()
-
 
         try:
 
@@ -286,10 +272,7 @@ def extract_text_from_file(file):
             )
 
 
-    # -----------------------------------------------------
     # PDF
-    # -----------------------------------------------------
-
     elif filename.endswith(".pdf"):
 
         reader = PdfReader(
@@ -298,13 +281,11 @@ def extract_text_from_file(file):
 
         pages = []
 
-
         for page in reader.pages:
 
             page_text = (
                 page.extract_text()
             )
-
 
             if page_text:
 
@@ -312,16 +293,12 @@ def extract_text_from_file(file):
                     page_text
                 )
 
-
         return "\n".join(
             pages
         )
 
 
-    # -----------------------------------------------------
     # DOCX
-    # -----------------------------------------------------
-
     elif filename.endswith(".docx"):
 
         document = Document(
@@ -329,7 +306,6 @@ def extract_text_from_file(file):
         )
 
         paragraphs = []
-
 
         for paragraph in (
             document.paragraphs
@@ -339,22 +315,16 @@ def extract_text_from_file(file):
                 paragraph.text.strip()
             )
 
-
             if text:
 
                 paragraphs.append(
                     text
                 )
 
-
         return "\n".join(
             paragraphs
         )
 
-
-    # -----------------------------------------------------
-    # INVALID FILE
-    # -----------------------------------------------------
 
     else:
 
@@ -407,8 +377,6 @@ def upload_file():
             }), 400
 
 
-        # Extract text
-
         extracted_text = (
             extract_text_from_file(
                 file
@@ -434,14 +402,10 @@ def upload_file():
             }), 400
 
 
-        # Use first 10000 characters
-
         detection_text = (
             extracted_text[:10000]
         )
 
-
-        # Convert text to features
 
         features = (
             vectorizer.transform(
@@ -450,16 +414,12 @@ def upload_file():
         )
 
 
-        # Predict language
-
         prediction = (
             model.predict(
                 features
             )[0]
         )
 
-
-        # Confidence
 
         if hasattr(
             model,
@@ -510,7 +470,6 @@ def upload_file():
             "File error:",
             error
         )
-
 
         return jsonify({
 
@@ -575,6 +534,8 @@ def split_text_into_chunks(
 # =========================================================
 # TRANSLATION CHUNK
 # =========================================================
+# UPDATED VERSION
+# =========================================================
 
 def translate_chunk(
     text,
@@ -583,30 +544,55 @@ def translate_chunk(
 ):
 
     # Same language
-
     if source_code == target_code:
 
         return text
 
 
+    url = (
+        "https://api.mymemory.translated.net/get"
+    )
+
+
+    params = {
+
+        "q":
+            text,
+
+        "langpair":
+            f"{source_code}|{target_code}"
+
+    }
+
+
+    headers = {
+
+        "User-Agent":
+            "LanguageDetectionAI/1.0"
+
+    }
+
+
     try:
 
-        # MyMemory Translation API
-
-        url = (
-            "https://api.mymemory.translated.net/get"
+        print(
+            "Sending translation request..."
         )
 
+        print(
+            "Source:",
+            source_code
+        )
 
-        params = {
+        print(
+            "Target:",
+            target_code
+        )
 
-            "q":
-                text,
-
-            "langpair":
-                f"{source_code}|{target_code}"
-
-        }
+        print(
+            "Text:",
+            text[:200]
+        )
 
 
         response = requests.get(
@@ -615,41 +601,28 @@ def translate_chunk(
 
             params=params,
 
+            headers=headers,
+
             timeout=30
 
         )
 
 
-        if response.status_code != 200:
+        print(
+            "Translation HTTP status:",
+            response.status_code
+        )
 
-            raise Exception(
+        print(
+            "Translation response:",
+            response.text[:1000]
+        )
 
-                "Translation API error: "
-                + str(
-                    response.status_code
-                )
 
-            )
+        response.raise_for_status()
 
 
         data = response.json()
-
-
-        if data.get(
-            "responseStatus"
-        ) != 200:
-
-            raise Exception(
-
-                data.get(
-
-                    "responseDetails",
-
-                    "Translation failed."
-
-                )
-
-            )
 
 
         translated = (
@@ -666,30 +639,56 @@ def translate_chunk(
                 ""
             )
 
+            .strip()
+
         )
 
 
         if not translated:
 
-            raise Exception(
+            details = data.get(
+
+                "responseDetails",
+
                 "Empty translation received."
+
+            )
+
+
+            raise Exception(
+                str(details)
             )
 
 
         return translated
 
 
-    except Exception as error:
+    except requests.exceptions.RequestException as error:
 
         print(
-            "Translation provider error:",
-            error
+            "Translation request failed:",
+            repr(error)
         )
 
 
         raise Exception(
 
-            "Translation service unavailable."
+            f"Translation API request failed: {error}"
+
+        )
+
+
+    except Exception as error:
+
+        print(
+            "Translation provider error:",
+            repr(error)
+        )
+
+
+        raise Exception(
+
+            f"Translation failed: {error}"
 
         )
 
@@ -757,8 +756,6 @@ def translate():
             }), 400
 
 
-        # Get language codes
-
         source_code = (
             LANGUAGE_CODES.get(
                 source_language
@@ -795,6 +792,29 @@ def translate():
                     "Unsupported target language."
 
             }), 400
+
+
+        print(
+            "======================================"
+        )
+
+        print(
+            "TRANSLATION REQUEST"
+        )
+
+        print(
+            "Source language:",
+            source_language
+        )
+
+        print(
+            "Target language:",
+            target_language
+        )
+
+        print(
+            "======================================"
+        )
 
 
         # Same language
@@ -857,11 +877,13 @@ def translate():
                 )
 
 
-                # Small delay
+                # Small delay between requests
 
-                time.sleep(
-                    1.2
-                )
+                if index < total_chunks:
+
+                    time.sleep(
+                        1.2
+                    )
 
 
             translated_text = (
@@ -897,7 +919,7 @@ def translate():
 
         print(
             "Translation error:",
-            error
+            repr(error)
         )
 
 
