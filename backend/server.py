@@ -1,9 +1,11 @@
+
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 import joblib
 import os
 import time
+import html
 import requests
 from io import BytesIO
 
@@ -60,7 +62,9 @@ VECTORIZER_PATH = os.path.join(
 # LOAD MODEL
 # =========================================================
 
+print("======================================")
 print("Loading language detection model...")
+print("======================================")
 
 model = joblib.load(
     MODEL_PATH
@@ -230,7 +234,7 @@ def predict():
 
         print(
             "Prediction error:",
-            error
+            repr(error)
         )
 
         return jsonify({
@@ -254,7 +258,10 @@ def extract_text_from_file(file):
     )
 
 
+    # =====================================================
     # TXT
+    # =====================================================
+
     if filename.endswith(".txt"):
 
         content = file.read()
@@ -272,7 +279,10 @@ def extract_text_from_file(file):
             )
 
 
+    # =====================================================
     # PDF
+    # =====================================================
+
     elif filename.endswith(".pdf"):
 
         reader = PdfReader(
@@ -281,24 +291,41 @@ def extract_text_from_file(file):
 
         pages = []
 
-        for page in reader.pages:
+        for page_number, page in enumerate(
+            reader.pages,
+            start=1
+        ):
 
-            page_text = (
-                page.extract_text()
-            )
+            try:
 
-            if page_text:
-
-                pages.append(
-                    page_text
+                page_text = (
+                    page.extract_text()
                 )
+
+                if page_text:
+
+                    pages.append(
+                        page_text
+                    )
+
+            except Exception as error:
+
+                print(
+                    f"PDF page {page_number} "
+                    f"reading error:",
+                    repr(error)
+                )
+
 
         return "\n".join(
             pages
         )
 
 
+    # =====================================================
     # DOCX
+    # =====================================================
+
     elif filename.endswith(".docx"):
 
         document = Document(
@@ -307,6 +334,8 @@ def extract_text_from_file(file):
 
         paragraphs = []
 
+
+        # Normal paragraphs
         for paragraph in (
             document.paragraphs
         ):
@@ -321,10 +350,42 @@ def extract_text_from_file(file):
                     text
                 )
 
+
+        # Tables inside DOCX
+        for table in document.tables:
+
+            for row in table.rows:
+
+                row_text = []
+
+                for cell in row.cells:
+
+                    cell_text = (
+                        cell.text.strip()
+                    )
+
+                    if cell_text:
+
+                        row_text.append(
+                            cell_text
+                        )
+
+
+                if row_text:
+
+                    paragraphs.append(
+                        " | ".join(row_text)
+                    )
+
+
         return "\n".join(
             paragraphs
         )
 
+
+    # =====================================================
+    # INVALID FILE
+    # =====================================================
 
     else:
 
@@ -377,6 +438,13 @@ def upload_file():
             }), 400
 
 
+        print("======================================")
+        print("FILE UPLOAD")
+        print("Filename:", file.filename)
+        print("======================================")
+
+
+        # Extract text
         extracted_text = (
             extract_text_from_file(
                 file
@@ -397,11 +465,15 @@ def upload_file():
 
                 "message":
                     "No readable text found "
-                    "in the file."
+                    "in the file. "
+                    "If this is a scanned/image PDF, "
+                    "OCR is required."
 
             }), 400
 
 
+        # Use first 10000 characters
+        # for language detection
         detection_text = (
             extracted_text[:10000]
         )
@@ -442,6 +514,20 @@ def upload_file():
             confidence = 0
 
 
+        print(
+            "Detected language:",
+            prediction
+        )
+
+        print(
+            "Confidence:",
+            round(
+                confidence,
+                2
+            )
+        )
+
+
         return jsonify({
 
             "success": True,
@@ -468,7 +554,7 @@ def upload_file():
 
         print(
             "File error:",
-            error
+            repr(error)
         )
 
         return jsonify({
@@ -487,8 +573,16 @@ def upload_file():
 
 def split_text_into_chunks(
     text,
-    max_chars=400
+    max_chars=350
 ):
+
+    # Preserve text
+    text = text.strip()
+
+    if not text:
+
+        return []
+
 
     words = text.split()
 
@@ -532,22 +626,128 @@ def split_text_into_chunks(
 
 
 # =========================================================
-# TRANSLATION CHUNK
-# =========================================================
-# UPDATED VERSION
+# GOOGLE TRANSLATE
 # =========================================================
 
-def translate_chunk(
+def translate_with_google(
     text,
     source_code,
     target_code
 ):
 
-    # Same language
-    if source_code == target_code:
+    url = (
+        "https://translate.googleapis.com/"
+        "translate_a/single"
+    )
 
-        return text
 
+    params = {
+
+        "client": "gtx",
+
+        "sl": source_code,
+
+        "tl": target_code,
+
+        "dt": "t",
+
+        "q": text
+
+    }
+
+
+    headers = {
+
+        "User-Agent":
+            "Mozilla/5.0"
+
+    }
+
+
+    print(
+        "Trying Google translation..."
+    )
+
+
+    response = requests.get(
+
+        url,
+
+        params=params,
+
+        headers=headers,
+
+        timeout=30
+
+    )
+
+
+    print(
+        "Google HTTP status:",
+        response.status_code
+    )
+
+
+    response.raise_for_status()
+
+
+    data = response.json()
+
+
+    translated_parts = []
+
+
+    if isinstance(data, list):
+
+        translation_data = data[0]
+
+        if isinstance(
+            translation_data,
+            list
+        ):
+
+            for item in translation_data:
+
+                if (
+                    isinstance(item, list)
+                    and len(item) > 0
+                    and item[0]
+                ):
+
+                    translated_parts.append(
+                        item[0]
+                    )
+
+
+    translated = "".join(
+        translated_parts
+    ).strip()
+
+
+    translated = html.unescape(
+        translated
+    )
+
+
+    if not translated:
+
+        raise Exception(
+            "Google returned empty translation."
+        )
+
+
+    return translated
+
+
+# =========================================================
+# MYMEMORY TRANSLATE
+# =========================================================
+
+def translate_with_mymemory(
+    text,
+    source_code,
+    target_code
+):
 
     url = (
         "https://api.mymemory.translated.net/get"
@@ -568,129 +768,190 @@ def translate_chunk(
     headers = {
 
         "User-Agent":
+            "Mozilla/5.0 "
+            "(Windows NT 10.0; Win64; x64) "
             "LanguageDetectionAI/1.0"
 
     }
 
 
+    print(
+        "Trying MyMemory translation..."
+    )
+
+
+    response = requests.get(
+
+        url,
+
+        params=params,
+
+        headers=headers,
+
+        timeout=30
+
+    )
+
+
+    print(
+        "MyMemory HTTP status:",
+        response.status_code
+    )
+
+
+    response.raise_for_status()
+
+
+    data = response.json()
+
+
+    translated = (
+
+        data
+        .get(
+            "responseData",
+            {}
+        )
+        .get(
+            "translatedText",
+            ""
+        )
+        .strip()
+
+    )
+
+
+    translated = html.unescape(
+        translated
+    )
+
+
+    if not translated:
+
+        details = data.get(
+
+            "responseDetails",
+
+            "MyMemory returned empty translation."
+
+        )
+
+        raise Exception(
+            str(details)
+        )
+
+
+    return translated
+
+
+# =========================================================
+# TRANSLATION CHUNK
+# =========================================================
+
+def translate_chunk(
+    text,
+    source_code,
+    target_code
+):
+
+    # Same language
+    if source_code == target_code:
+
+        return text
+
+
+    print(
+        "--------------------------------------"
+    )
+
+    print(
+        "Translation chunk"
+    )
+
+    print(
+        "Source:",
+        source_code
+    )
+
+    print(
+        "Target:",
+        target_code
+    )
+
+    print(
+        "Text:",
+        text[:200]
+    )
+
+
+    # =====================================================
+    # METHOD 1 - GOOGLE
+    # =====================================================
+
     try:
 
-        print(
-            "Sending translation request..."
-        )
-
-        print(
-            "Source:",
-            source_code
-        )
-
-        print(
-            "Target:",
-            target_code
-        )
-
-        print(
-            "Text:",
-            text[:200]
-        )
-
-
-        response = requests.get(
-
-            url,
-
-            params=params,
-
-            headers=headers,
-
-            timeout=30
-
-        )
-
-
-        print(
-            "Translation HTTP status:",
-            response.status_code
-        )
-
-        print(
-            "Translation response:",
-            response.text[:1000]
-        )
-
-
-        response.raise_for_status()
-
-
-        data = response.json()
-
-
         translated = (
-
-            data
-
-            .get(
-                "responseData",
-                {}
+            translate_with_google(
+                text,
+                source_code,
+                target_code
             )
-
-            .get(
-                "translatedText",
-                ""
-            )
-
-            .strip()
-
         )
 
-
-        if not translated:
-
-            details = data.get(
-
-                "responseDetails",
-
-                "Empty translation received."
-
-            )
-
-
-            raise Exception(
-                str(details)
-            )
-
+        print(
+            "Google translation SUCCESS"
+        )
 
         return translated
 
 
-    except requests.exceptions.RequestException as error:
+    except Exception as google_error:
 
         print(
-            "Translation request failed:",
-            repr(error)
+            "Google translation failed:",
+            repr(google_error)
         )
 
 
-        raise Exception(
+    # =====================================================
+    # METHOD 2 - MYMEMORY
+    # =====================================================
 
-            f"Translation API request failed: {error}"
+    try:
 
+        translated = (
+            translate_with_mymemory(
+                text,
+                source_code,
+                target_code
+            )
         )
-
-
-    except Exception as error:
 
         print(
-            "Translation provider error:",
-            repr(error)
+            "MyMemory translation SUCCESS"
+        )
+
+        return translated
+
+
+    except Exception as memory_error:
+
+        print(
+            "MyMemory translation failed:",
+            repr(memory_error)
         )
 
 
-        raise Exception(
+    # =====================================================
+    # BOTH FAILED
+    # =====================================================
 
-            f"Translation failed: {error}"
+    raise Exception(
 
-        )
+        "Both translation services failed. "
+        "Please try again after a few seconds."
+
+    )
 
 
 # =========================================================
@@ -756,6 +1017,10 @@ def translate():
             }), 400
 
 
+        # =================================================
+        # LANGUAGE CODES
+        # =================================================
+
         source_code = (
             LANGUAGE_CODES.get(
                 source_language
@@ -777,7 +1042,8 @@ def translate():
                 "success": False,
 
                 "message":
-                    "Unsupported source language."
+                    "Unsupported source language: "
+                    + str(source_language)
 
             }), 400
 
@@ -789,35 +1055,26 @@ def translate():
                 "success": False,
 
                 "message":
-                    "Unsupported target language."
+                    "Unsupported target language: "
+                    + str(target_language)
 
             }), 400
 
 
-        print(
-            "======================================"
-        )
-
-        print(
-            "TRANSLATION REQUEST"
-        )
-
-        print(
-            "Source language:",
-            source_language
-        )
-
-        print(
-            "Target language:",
-            target_language
-        )
-
-        print(
-            "======================================"
-        )
+        print("")
+        print("======================================")
+        print("TRANSLATION REQUEST")
+        print("Source language:", source_language)
+        print("Source code:", source_code)
+        print("Target language:", target_language)
+        print("Target code:", target_code)
+        print("Text length:", len(text))
+        print("======================================")
 
 
-        # Same language
+        # =================================================
+        # SAME LANGUAGE
+        # =================================================
 
         if source_code == target_code:
 
@@ -828,20 +1085,47 @@ def translate():
 
         else:
 
+            # =================================================
+            # SPLIT TEXT
+            # =================================================
+
             chunks = (
                 split_text_into_chunks(
                     text,
-                    400
+                    350
                 )
             )
 
 
+            if not chunks:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message":
+                        "Unable to create translation chunks."
+
+                }), 400
+
+
             translated_chunks = []
+
 
             total_chunks = len(
                 chunks
             )
 
+
+            print(
+                "Total chunks:",
+                total_chunks
+            )
+
+
+            # =================================================
+            # TRANSLATE EVERY CHUNK
+            # =================================================
 
             for index, chunk in enumerate(
 
@@ -852,10 +1136,8 @@ def translate():
             ):
 
                 print(
-
                     f"Translating chunk "
                     f"{index}/{total_chunks}"
-
                 )
 
 
@@ -877,12 +1159,13 @@ def translate():
                 )
 
 
-                # Small delay between requests
+                # Small delay
+                # between API requests
 
                 if index < total_chunks:
 
                     time.sleep(
-                        1.2
+                        0.8
                     )
 
 
@@ -891,6 +1174,11 @@ def translate():
                     translated_chunks
                 )
             )
+
+
+        print(
+            "TRANSLATION SUCCESS"
+        )
 
 
         return jsonify({
@@ -917,9 +1205,21 @@ def translate():
 
     except Exception as error:
 
+        print("")
         print(
-            "Translation error:",
+            "======================================"
+        )
+
+        print(
+            "TRANSLATION ERROR"
+        )
+
+        print(
             repr(error)
+        )
+
+        print(
+            "======================================"
         )
 
 
@@ -930,7 +1230,7 @@ def translate():
             "message":
                 str(error)
 
-        }), 500
+        }), 502
 
 
 # =========================================================
@@ -1094,6 +1394,68 @@ def download_document():
             line_height = 16
 
 
+            # =================================================
+            # PDF FONT
+            # =================================================
+
+            font_name = "Helvetica"
+
+
+            try:
+
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+
+
+                possible_fonts = [
+
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+
+                    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+
+                    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"
+
+                ]
+
+
+                for font_path in possible_fonts:
+
+                    if os.path.exists(
+                        font_path
+                    ):
+
+                        pdfmetrics.registerFont(
+
+                            TTFont(
+                                "UnicodeFont",
+                                font_path
+                            )
+
+                        )
+
+                        font_name = "UnicodeFont"
+
+                        break
+
+
+            except Exception as font_error:
+
+                print(
+                    "Unicode font loading failed:",
+                    repr(font_error)
+                )
+
+
+            pdf.setFont(
+                font_name,
+                10
+            )
+
+
+            # =================================================
+            # WRITE TEXT
+            # =================================================
+
             for paragraph in (
                 text.split("\n")
             ):
@@ -1136,6 +1498,11 @@ def download_document():
 
                             pdf.showPage()
 
+                            pdf.setFont(
+                                font_name,
+                                10
+                            )
+
                             y = top_margin
 
 
@@ -1165,6 +1532,11 @@ def download_document():
                 if y < 50:
 
                     pdf.showPage()
+
+                    pdf.setFont(
+                        font_name,
+                        10
+                    )
 
                     y = top_margin
 
@@ -1210,7 +1582,7 @@ def download_document():
 
         print(
             "Download error:",
-            error
+            repr(error)
         )
 
 
@@ -1225,30 +1597,50 @@ def download_document():
 
 
 # =========================================================
+# ERROR HANDLERS
+# =========================================================
+
+@app.errorhandler(404)
+def not_found(error):
+
+    return jsonify({
+
+        "success": False,
+
+        "message":
+            "Endpoint not found."
+
+    }), 404
+
+
+@app.errorhandler(413)
+def file_too_large(error):
+
+    return jsonify({
+
+        "success": False,
+
+        "message":
+            "Uploaded file is too large."
+
+    }), 413
+
+
+# =========================================================
 # RUN SERVER
 # =========================================================
 
 if __name__ == "__main__":
 
-    print(
-        "======================================"
-    )
-
-    print(
-        " LANGUAGE DETECTION FULL STACK APP"
-    )
-
-    print(
-        "======================================"
-    )
-
-    print(
-        "Frontend + Backend running together"
-    )
-
-    print(
-        "======================================"
-    )
+    print("")
+    print("======================================")
+    print(" LANGUAGE DETECTION FULL STACK APP")
+    print("======================================")
+    print("Frontend + Backend running together")
+    print("======================================")
+    print("Local URL:")
+    print("http://127.0.0.1:5000")
+    print("======================================")
 
 
     app.run(
@@ -1260,3 +1652,4 @@ if __name__ == "__main__":
         debug=True
 
     )
+
