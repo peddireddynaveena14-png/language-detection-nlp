@@ -1,7 +1,16 @@
 
-// ============================================
+// =====================================================
+// BACKEND URL
+// =====================================================
+// Frontend and backend are running from the SAME URL.
+// So no separate backend URL is required.
+
+const BACKEND_URL = "";
+
+
+// =====================================================
 // LANGUAGE DETECTION
-// ============================================
+// =====================================================
 
 async function detectLanguage() {
 
@@ -17,41 +26,61 @@ async function detectLanguage() {
     const resultBox =
         document.getElementById("result");
 
+
     if (!text) {
+
         alert("Please enter some text.");
+
         return;
     }
+
 
     resultBox.classList.remove("hidden");
 
     result.innerText = "Detecting...";
     confidence.innerText = "Please wait...";
 
+
     try {
 
-        const response = await fetch(
-            "http://127.0.0.1:5000/predict",
-            {
-                method: "POST",
+        const response =
+            await fetch(
+                `${BACKEND_URL}/predict`,
+                {
+                    method: "POST",
 
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                body: JSON.stringify({
-                    text: text
-                })
-            }
-        );
+                    body: JSON.stringify({
+                        text: text
+                    })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `Server error: ${response.status}`
+            );
+        }
+
 
         const data =
             await response.json();
 
+
         if (!data.success) {
+
             throw new Error(
-                data.message || "Detection failed."
+                data.message ||
+                "Detection failed."
             );
         }
+
 
         result.innerText =
             data.language;
@@ -59,13 +88,13 @@ async function detectLanguage() {
         confidence.innerText =
             data.confidence + "%";
 
-    }
 
-    catch (error) {
+    } catch (error) {
 
         console.error(error);
 
-        result.innerText = "Error";
+        result.innerText =
+            "Error";
 
         confidence.innerText =
             error.message;
@@ -73,9 +102,9 @@ async function detectLanguage() {
 }
 
 
-// ============================================
+// =====================================================
 // FILE UPLOAD + DETECTION + TRANSLATION
-// ============================================
+// =====================================================
 
 async function uploadFile() {
 
@@ -85,6 +114,7 @@ async function uploadFile() {
     const file =
         fileInput.files[0];
 
+
     if (!file) {
 
         alert(
@@ -93,6 +123,7 @@ async function uploadFile() {
 
         return;
     }
+
 
     const fileResult =
         document.getElementById("fileResult");
@@ -107,13 +138,18 @@ async function uploadFile() {
         document.getElementById("fileConfidence");
 
     const resultBox =
-        document.getElementById("translationResult");
+        document.getElementById(
+            "translationResult"
+        );
 
     const translatedText =
-        document.getElementById("translatedText");
+        document.getElementById(
+            "translatedText"
+        );
 
 
     fileResult.classList.remove("hidden");
+
 
     fileName.innerText =
         file.name;
@@ -127,9 +163,9 @@ async function uploadFile() {
 
     try {
 
-        // =====================================
-        // UPLOAD FILE
-        // =====================================
+        // =================================================
+        // STEP 1: UPLOAD FILE
+        // =================================================
 
         const formData =
             new FormData();
@@ -142,12 +178,20 @@ async function uploadFile() {
 
         const uploadResponse =
             await fetch(
-                "http://127.0.0.1:5000/upload",
+                `${BACKEND_URL}/upload`,
                 {
                     method: "POST",
                     body: formData
                 }
             );
+
+
+        if (!uploadResponse.ok) {
+
+            throw new Error(
+                `Upload server error: ${uploadResponse.status}`
+            );
+        }
 
 
         const uploadData =
@@ -163,9 +207,9 @@ async function uploadFile() {
         }
 
 
-        // =====================================
-        // SHOW DETECTED LANGUAGE
-        // =====================================
+        // =================================================
+        // STEP 2: SHOW DETECTED LANGUAGE
+        // =================================================
 
         fileLanguage.innerText =
             uploadData.language;
@@ -174,9 +218,9 @@ async function uploadFile() {
             uploadData.confidence + "%";
 
 
-        // =====================================
-        // GET EXTRACTED TEXT
-        // =====================================
+        // =================================================
+        // STEP 3: GET EXTRACTED TEXT
+        // =================================================
 
         const extractedText =
             uploadData.extracted_text;
@@ -193,9 +237,9 @@ async function uploadFile() {
         }
 
 
-        // =====================================
-        // TARGET LANGUAGE
-        // =====================================
+        // =================================================
+        // STEP 4: GET TARGET LANGUAGE
+        // =================================================
 
         const targetLanguage =
             document.getElementById(
@@ -203,9 +247,9 @@ async function uploadFile() {
             ).value;
 
 
-        // =====================================
-        // SHOW TRANSLATING
-        // =====================================
+        // =================================================
+        // STEP 5: SHOW TRANSLATING
+        // =================================================
 
         resultBox.classList.remove(
             "hidden"
@@ -215,13 +259,13 @@ async function uploadFile() {
             "Translating document...";
 
 
-        // =====================================
-        // TRANSLATE DOCUMENT
-        // =====================================
+        // =================================================
+        // STEP 6: TRANSLATE DOCUMENT
+        // =================================================
 
         const translationResponse =
             await fetch(
-                "http://127.0.0.1:5000/translate",
+                `${BACKEND_URL}/translate`,
                 {
                     method: "POST",
 
@@ -240,10 +284,17 @@ async function uploadFile() {
 
                         target_language:
                             targetLanguage
-
                     })
                 }
             );
+
+
+        if (!translationResponse.ok) {
+
+            throw new Error(
+                `Translation server error: ${translationResponse.status}`
+            );
+        }
 
 
         const translationData =
@@ -259,22 +310,21 @@ async function uploadFile() {
         }
 
 
-        // =====================================
-        // DISPLAY TRANSLATION
-        // =====================================
+        // =================================================
+        // STEP 7: DISPLAY TRANSLATION
+        // =================================================
 
         translatedText.value =
             translationData.translated_text;
 
-    }
 
-
-    catch (error) {
+    } catch (error) {
 
         console.error(
             "Document translation error:",
             error
         );
+
 
         translatedText.value =
             "Translation failed: " +
@@ -283,9 +333,9 @@ async function uploadFile() {
 }
 
 
-// ============================================
+// =====================================================
 // TEXT TRANSLATION
-// ============================================
+// =====================================================
 
 async function translateText() {
 
@@ -294,15 +344,18 @@ async function translateText() {
             "textInput"
         ).value.trim();
 
+
     const targetLanguage =
         document.getElementById(
             "targetLanguage"
         ).value;
 
+
     const resultBox =
         document.getElementById(
             "translationResult"
         );
+
 
     const translatedText =
         document.getElementById(
@@ -323,6 +376,7 @@ async function translateText() {
     translatedText.value =
         "Translating...";
 
+
     resultBox.classList.remove(
         "hidden"
     );
@@ -330,10 +384,13 @@ async function translateText() {
 
     try {
 
-        // Detect source language
+        // =================================================
+        // STEP 1: DETECT SOURCE LANGUAGE
+        // =================================================
+
         const detectResponse =
             await fetch(
-                "http://127.0.0.1:5000/predict",
+                `${BACKEND_URL}/predict`,
                 {
                     method: "POST",
 
@@ -347,6 +404,14 @@ async function translateText() {
                     })
                 }
             );
+
+
+        if (!detectResponse.ok) {
+
+            throw new Error(
+                `Detection server error: ${detectResponse.status}`
+            );
+        }
 
 
         const detectData =
@@ -366,10 +431,13 @@ async function translateText() {
             detectData.language;
 
 
-        // Translate
+        // =================================================
+        // STEP 2: TRANSLATE
+        // =================================================
+
         const response =
             await fetch(
-                "http://127.0.0.1:5000/translate",
+                `${BACKEND_URL}/translate`,
                 {
                     method: "POST",
 
@@ -380,17 +448,25 @@ async function translateText() {
 
                     body: JSON.stringify({
 
-                        text: text,
+                        text:
+                            text,
 
                         source_language:
                             sourceLanguage,
 
                         target_language:
                             targetLanguage
-
                     })
                 }
             );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `Translation server error: ${response.status}`
+            );
+        }
 
 
         const data =
@@ -406,13 +482,15 @@ async function translateText() {
         }
 
 
+        // =================================================
+        // STEP 3: DISPLAY RESULT
+        // =================================================
+
         translatedText.value =
             data.translated_text;
 
-    }
 
-
-    catch (error) {
+    } catch (error) {
 
         console.error(error);
 
@@ -423,11 +501,11 @@ async function translateText() {
 }
 
 
-// ============================================
+// =====================================================
 // DOWNLOAD TRANSLATION
-// ============================================
+// =====================================================
 
-function downloadTranslation() {
+async function downloadTranslation() {
 
     const translatedText =
         document.getElementById(
@@ -447,14 +525,43 @@ function downloadTranslation() {
 
     try {
 
-        const blob =
-            new Blob(
-                [translatedText],
+        // =================================================
+        // DOWNLOAD TXT FROM FLASK BACKEND
+        // =================================================
+
+        const response =
+            await fetch(
+                `${BACKEND_URL}/download`,
                 {
-                    type:
-                        "text/plain;charset=utf-8"
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        text:
+                            translatedText,
+
+                        format:
+                            "txt"
+                    })
                 }
             );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `Download server error: ${response.status}`
+            );
+        }
+
+
+        const blob =
+            await response.blob();
 
 
         const url =
@@ -464,10 +571,14 @@ function downloadTranslation() {
 
 
         const link =
-            document.createElement("a");
+            document.createElement(
+                "a"
+            );
 
 
-        link.href = url;
+        link.href =
+            url;
+
 
         link.download =
             "translated_text.txt";
@@ -477,7 +588,9 @@ function downloadTranslation() {
             link
         );
 
+
         link.click();
+
 
         document.body.removeChild(
             link
@@ -488,15 +601,14 @@ function downloadTranslation() {
             url
         );
 
-    }
 
-
-    catch (error) {
+    } catch (error) {
 
         console.error(
             "Download error:",
             error
         );
+
 
         alert(
             "Download failed: " +

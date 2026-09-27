@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
@@ -7,7 +6,6 @@ import os
 import time
 import requests
 from io import BytesIO
-from urllib.parse import quote
 
 from pypdf import PdfReader
 from docx import Document
@@ -17,21 +15,45 @@ from reportlab.lib.pagesizes import A4
 
 
 # =========================================================
+# PATHS
+# =========================================================
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+FRONTEND_DIR = os.path.join(
+    BASE_DIR,
+    "frontend"
+)
+
+
+# =========================================================
 # FLASK APP
 # =========================================================
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    static_folder=FRONTEND_DIR,
+    static_url_path=""
+)
+
 CORS(app)
 
 
 # =========================================================
-# PATHS
+# MODEL PATHS
 # =========================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "model.pkl"
+)
 
-MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
-VECTORIZER_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
+VECTORIZER_PATH = os.path.join(
+    BASE_DIR,
+    "vectorizer.pkl"
+)
 
 
 # =========================================================
@@ -40,8 +62,13 @@ VECTORIZER_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 
 print("Loading language detection model...")
 
-model = joblib.load(MODEL_PATH)
-vectorizer = joblib.load(VECTORIZER_PATH)
+model = joblib.load(
+    MODEL_PATH
+)
+
+vectorizer = joblib.load(
+    VECTORIZER_PATH
+)
 
 print("MODEL LOADED SUCCESSFULLY")
 
@@ -51,12 +78,14 @@ print("MODEL LOADED SUCCESSFULLY")
 # =========================================================
 
 LANGUAGE_CODES = {
+
     "English": "en",
     "Hindi": "hi",
     "Telugu": "te",
     "Tamil": "ta",
     "Kannada": "kn",
     "Malayalam": "ml",
+
     "Spanish": "es",
     "French": "fr",
     "German": "de",
@@ -64,6 +93,7 @@ LANGUAGE_CODES = {
     "Italian": "it",
     "Russian": "ru",
     "Dutch": "nl",
+
     "Arabic": "ar",
     "Turkish": "tr",
     "Danish": "da",
@@ -75,15 +105,16 @@ LANGUAGE_CODES = {
 # =========================================================
 # HOME
 # =========================================================
+# This now opens the FRONTEND instead of returning JSON.
+# Therefore frontend + backend use ONE public URL.
+# =========================================================
 
 @app.route("/")
 def home():
 
-    return jsonify({
-        "success": True,
-        "message": "Language Detection Backend is running",
-        "status": "online"
-    })
+    return app.send_static_file(
+        "index.html"
+    )
 
 
 # =========================================================
@@ -94,8 +125,14 @@ def home():
 def health():
 
     return jsonify({
+
         "success": True,
-        "status": "healthy"
+
+        "status": "healthy",
+
+        "message":
+            "Language Detection Application is running"
+
     })
 
 
@@ -103,33 +140,76 @@ def health():
 # TEXT LANGUAGE DETECTION
 # =========================================================
 
-@app.route("/predict", methods=["POST"])
+@app.route(
+    "/predict",
+    methods=["POST"]
+)
 def predict():
 
     try:
 
         data = request.get_json()
 
-        text = data.get("text", "").strip()
+        if not data:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "No JSON data received."
+
+            }), 400
+
+
+        text = data.get(
+            "text",
+            ""
+        ).strip()
+
 
         if not text:
 
             return jsonify({
+
                 "success": False,
-                "message": "Please enter text."
+
+                "message":
+                    "Please enter text."
+
             }), 400
 
 
-        features = vectorizer.transform([text])
+        # Convert text into ML features
 
-        prediction = model.predict(features)[0]
+        features = vectorizer.transform(
+            [text]
+        )
 
 
-        if hasattr(model, "predict_proba"):
+        # Predict language
 
-            probabilities = model.predict_proba(features)[0]
+        prediction = model.predict(
+            features
+        )[0]
 
-            confidence = max(probabilities) * 100
+
+        # Calculate confidence
+
+        if hasattr(
+            model,
+            "predict_proba"
+        ):
+
+            probabilities = (
+                model.predict_proba(
+                    features
+                )[0]
+            )
+
+            confidence = (
+                max(probabilities) * 100
+            )
 
         else:
 
@@ -140,24 +220,35 @@ def predict():
 
             "success": True,
 
-            "language": str(prediction),
+            "language":
+                str(prediction),
 
-            "confidence": round(confidence, 2),
+            "confidence":
+                round(
+                    confidence,
+                    2
+                ),
 
-            "text": text
+            "text":
+                text
 
         })
 
 
     except Exception as error:
 
-        print("Prediction error:", error)
+        print(
+            "Prediction error:",
+            error
+        )
+
 
         return jsonify({
 
             "success": False,
 
-            "message": str(error)
+            "message":
+                str(error)
 
         }), 500
 
@@ -168,7 +259,9 @@ def predict():
 
 def extract_text_from_file(file):
 
-    filename = file.filename.lower()
+    filename = (
+        file.filename.lower()
+    )
 
 
     # -----------------------------------------------------
@@ -179,13 +272,18 @@ def extract_text_from_file(file):
 
         content = file.read()
 
+
         try:
 
-            return content.decode("utf-8")
+            return content.decode(
+                "utf-8"
+            )
 
         except UnicodeDecodeError:
 
-            return content.decode("latin-1")
+            return content.decode(
+                "latin-1"
+            )
 
 
     # -----------------------------------------------------
@@ -194,20 +292,30 @@ def extract_text_from_file(file):
 
     elif filename.endswith(".pdf"):
 
-        reader = PdfReader(file)
+        reader = PdfReader(
+            file
+        )
 
         pages = []
 
+
         for page in reader.pages:
 
-            page_text = page.extract_text()
+            page_text = (
+                page.extract_text()
+            )
+
 
             if page_text:
 
-                pages.append(page_text)
+                pages.append(
+                    page_text
+                )
 
 
-        return "\n".join(pages)
+        return "\n".join(
+            pages
+        )
 
 
     # -----------------------------------------------------
@@ -216,26 +324,45 @@ def extract_text_from_file(file):
 
     elif filename.endswith(".docx"):
 
-        document = Document(file)
+        document = Document(
+            file
+        )
 
         paragraphs = []
 
-        for paragraph in document.paragraphs:
 
-            text = paragraph.text.strip()
+        for paragraph in (
+            document.paragraphs
+        ):
+
+            text = (
+                paragraph.text.strip()
+            )
+
 
             if text:
 
-                paragraphs.append(text)
+                paragraphs.append(
+                    text
+                )
 
 
-        return "\n".join(paragraphs)
+        return "\n".join(
+            paragraphs
+        )
 
+
+    # -----------------------------------------------------
+    # INVALID FILE
+    # -----------------------------------------------------
 
     else:
 
         raise ValueError(
-            "Only PDF, DOCX and TXT files are supported."
+
+            "Only PDF, DOCX and TXT "
+            "files are supported."
+
         )
 
 
@@ -243,7 +370,10 @@ def extract_text_from_file(file):
 # FILE UPLOAD + LANGUAGE DETECTION
 # =========================================================
 
-@app.route("/upload", methods=["POST"])
+@app.route(
+    "/upload",
+    methods=["POST"]
+)
 def upload_file():
 
     try:
@@ -251,52 +381,101 @@ def upload_file():
         if "file" not in request.files:
 
             return jsonify({
+
                 "success": False,
-                "message": "No file uploaded."
+
+                "message":
+                    "No file uploaded."
+
             }), 400
 
 
-        file = request.files["file"]
+        file = request.files[
+            "file"
+        ]
 
 
         if not file.filename:
 
             return jsonify({
+
                 "success": False,
-                "message": "Please select a file."
+
+                "message":
+                    "Please select a file."
+
             }), 400
 
 
-        extracted_text = extract_text_from_file(file)
+        # Extract text
 
-        extracted_text = extracted_text.strip()
+        extracted_text = (
+            extract_text_from_file(
+                file
+            )
+        )
+
+
+        extracted_text = (
+            extracted_text.strip()
+        )
 
 
         if not extracted_text:
 
             return jsonify({
+
                 "success": False,
-                "message": "No readable text found in the file."
+
+                "message":
+                    "No readable text found "
+                    "in the file."
+
             }), 400
 
 
-        # Use first 10000 characters for detection
+        # Use first 10000 characters
 
-        detection_text = extracted_text[:10000]
-
-
-        features = vectorizer.transform(
-            [detection_text]
+        detection_text = (
+            extracted_text[:10000]
         )
 
-        prediction = model.predict(features)[0]
+
+        # Convert text to features
+
+        features = (
+            vectorizer.transform(
+                [detection_text]
+            )
+        )
 
 
-        if hasattr(model, "predict_proba"):
+        # Predict language
 
-            probabilities = model.predict_proba(features)[0]
+        prediction = (
+            model.predict(
+                features
+            )[0]
+        )
 
-            confidence = max(probabilities) * 100
+
+        # Confidence
+
+        if hasattr(
+            model,
+            "predict_proba"
+        ):
+
+            probabilities = (
+                model.predict_proba(
+                    features
+                )[0]
+            )
+
+            confidence = (
+                max(probabilities)
+                * 100
+            )
 
         else:
 
@@ -307,26 +486,38 @@ def upload_file():
 
             "success": True,
 
-            "filename": file.filename,
+            "filename":
+                file.filename,
 
-            "extracted_text": extracted_text,
+            "extracted_text":
+                extracted_text,
 
-            "language": str(prediction),
+            "language":
+                str(prediction),
 
-            "confidence": round(confidence, 2)
+            "confidence":
+                round(
+                    confidence,
+                    2
+                )
 
         })
 
 
     except Exception as error:
 
-        print("File error:", error)
+        print(
+            "File error:",
+            error
+        )
+
 
         return jsonify({
 
             "success": False,
 
-            "message": str(error)
+            "message":
+                str(error)
 
         }), 500
 
@@ -335,7 +526,10 @@ def upload_file():
 # TEXT CHUNKING
 # =========================================================
 
-def split_text_into_chunks(text, max_chars=400):
+def split_text_into_chunks(
+    text,
+    max_chars=400
+):
 
     words = text.split()
 
@@ -346,7 +540,11 @@ def split_text_into_chunks(text, max_chars=400):
 
     for word in words:
 
-        test = (current + " " + word).strip()
+        test = (
+            current
+            + " "
+            + word
+        ).strip()
 
 
         if len(test) <= max_chars:
@@ -357,72 +555,119 @@ def split_text_into_chunks(text, max_chars=400):
 
             if current:
 
-                chunks.append(current)
+                chunks.append(
+                    current
+                )
 
             current = word
 
 
     if current:
 
-        chunks.append(current)
+        chunks.append(
+            current
+        )
 
 
     return chunks
 
 
 # =========================================================
-# GOOGLE TRANSLATION WEB REQUEST
+# TRANSLATION CHUNK
 # =========================================================
 
+def translate_chunk(
+    text,
+    source_code,
+    target_code
+):
 
-def translate_chunk(text, source_code, target_code):
+    # Same language
 
-    # Same language అయితే translation అవసరం లేదు
     if source_code == target_code:
+
         return text
+
 
     try:
 
-        # Free MyMemory Translation API
-        url = "https://api.mymemory.translated.net/get"
+        # MyMemory Translation API
 
-        params = {
-            "q": text,
-            "langpair": f"{source_code}|{target_code}"
-        }
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=30
+        url = (
+            "https://api.mymemory.translated.net/get"
         )
 
-        # Check HTTP response
+
+        params = {
+
+            "q":
+                text,
+
+            "langpair":
+                f"{source_code}|{target_code}"
+
+        }
+
+
+        response = requests.get(
+
+            url,
+
+            params=params,
+
+            timeout=30
+
+        )
+
+
         if response.status_code != 200:
 
             raise Exception(
-                f"Translation API error: "
-                f"{response.status_code}"
+
+                "Translation API error: "
+                + str(
+                    response.status_code
+                )
+
             )
+
 
         data = response.json()
 
-        # Check API response
-        if data.get("responseStatus") != 200:
+
+        if data.get(
+            "responseStatus"
+        ) != 200:
 
             raise Exception(
+
                 data.get(
+
                     "responseDetails",
+
                     "Translation failed."
+
                 )
+
             )
 
-        # Get translated text
+
         translated = (
+
             data
-            .get("responseData", {})
-            .get("translatedText", "")
+
+            .get(
+                "responseData",
+                {}
+            )
+
+            .get(
+                "translatedText",
+                ""
+            )
+
         )
+
 
         if not translated:
 
@@ -430,7 +675,9 @@ def translate_chunk(text, source_code, target_code):
                 "Empty translation received."
             )
 
+
         return translated
+
 
     except Exception as error:
 
@@ -439,22 +686,39 @@ def translate_chunk(text, source_code, target_code):
             error
         )
 
-        raise Exception(
-            "Translation service unavailable."
-        )
 
+        raise Exception(
+
+            "Translation service unavailable."
+
+        )
 
 
 # =========================================================
 # TRANSLATE TEXT
 # =========================================================
 
-@app.route("/translate", methods=["POST"])
+@app.route(
+    "/translate",
+    methods=["POST"]
+)
 def translate():
 
     try:
 
         data = request.get_json()
+
+
+        if not data:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "No JSON data received."
+
+            }), 400
 
 
         text = data.get(
@@ -464,14 +728,20 @@ def translate():
 
 
         source_language = data.get(
+
             "source_language",
+
             "English"
+
         )
 
 
         target_language = data.get(
+
             "target_language",
+
             "English"
+
         )
 
 
@@ -487,13 +757,19 @@ def translate():
             }), 400
 
 
-        source_code = LANGUAGE_CODES.get(
-            source_language
+        # Get language codes
+
+        source_code = (
+            LANGUAGE_CODES.get(
+                source_language
+            )
         )
 
 
-        target_code = LANGUAGE_CODES.get(
-            target_language
+        target_code = (
+            LANGUAGE_CODES.get(
+                target_language
+            )
         )
 
 
@@ -532,36 +808,47 @@ def translate():
 
         else:
 
-            chunks = split_text_into_chunks(
-                text,
-                400
+            chunks = (
+                split_text_into_chunks(
+                    text,
+                    400
+                )
             )
 
 
             translated_chunks = []
 
-            total_chunks = len(chunks)
+            total_chunks = len(
+                chunks
+            )
 
 
             for index, chunk in enumerate(
+
                 chunks,
+
                 start=1
+
             ):
 
                 print(
+
                     f"Translating chunk "
                     f"{index}/{total_chunks}"
+
                 )
 
 
-                translated = translate_chunk(
+                translated = (
+                    translate_chunk(
 
-                    chunk,
+                        chunk,
 
-                    source_code,
+                        source_code,
 
-                    target_code
+                        target_code
 
+                    )
                 )
 
 
@@ -570,14 +857,17 @@ def translate():
                 )
 
 
-                # Small delay to reduce
-                # request-rate problems
+                # Small delay
 
-                time.sleep(1.2)
+                time.sleep(
+                    1.2
+                )
 
 
-            translated_text = "\n\n".join(
-                translated_chunks
+            translated_text = (
+                "\n\n".join(
+                    translated_chunks
+                )
             )
 
 
@@ -585,7 +875,8 @@ def translate():
 
             "success": True,
 
-            "original_text": text,
+            "original_text":
+                text,
 
             "translated_text":
                 translated_text,
@@ -624,12 +915,27 @@ def translate():
 # DOWNLOAD TRANSLATED FILE
 # =========================================================
 
-@app.route("/download", methods=["POST"])
+@app.route(
+    "/download",
+    methods=["POST"]
+)
 def download_document():
 
     try:
 
         data = request.get_json()
+
+
+        if not data:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "No JSON data received."
+
+            }), 400
 
 
         text = data.get(
@@ -656,17 +962,21 @@ def download_document():
             }), 400
 
 
-        # -------------------------------------------------
+        # =================================================
         # TXT
-        # -------------------------------------------------
+        # =================================================
 
         if file_format == "txt":
 
             output = BytesIO()
 
+
             output.write(
-                text.encode("utf-8")
+                text.encode(
+                    "utf-8"
+                )
             )
+
 
             output.seek(0)
 
@@ -686,16 +996,18 @@ def download_document():
             )
 
 
-        # -------------------------------------------------
+        # =================================================
         # DOCX
-        # -------------------------------------------------
+        # =================================================
 
         elif file_format == "docx":
 
             document = Document()
 
 
-            for paragraph in text.split("\n"):
+            for paragraph in (
+                text.split("\n")
+            ):
 
                 document.add_paragraph(
                     paragraph
@@ -704,7 +1016,11 @@ def download_document():
 
             output = BytesIO()
 
-            document.save(output)
+
+            document.save(
+                output
+            )
+
 
             output.seek(0)
 
@@ -724,9 +1040,9 @@ def download_document():
             )
 
 
-        # -------------------------------------------------
+        # =================================================
         # PDF
-        # -------------------------------------------------
+        # =================================================
 
         elif file_format == "pdf":
 
@@ -747,14 +1063,18 @@ def download_document():
 
             left_margin = 45
 
-            top_margin = height - 50
+            top_margin = (
+                height - 50
+            )
 
             y = top_margin
 
             line_height = 16
 
 
-            for paragraph in text.split("\n"):
+            for paragraph in (
+                text.split("\n")
+            ):
 
                 words = paragraph.split()
 
@@ -765,7 +1085,9 @@ def download_document():
 
                     test_line = (
 
-                        line + " " + word
+                        line
+                        + " "
+                        + word
 
                     ).strip()
 
@@ -827,6 +1149,7 @@ def download_document():
 
             pdf.save()
 
+
             output.seek(0)
 
 
@@ -844,6 +1167,10 @@ def download_document():
 
             )
 
+
+        # =================================================
+        # INVALID FORMAT
+        # =================================================
 
         else:
 
@@ -876,35 +1203,38 @@ def download_document():
 
 
 # =========================================================
-# START SERVER
+# RUN SERVER
 # =========================================================
 
 if __name__ == "__main__":
 
-    print("======================================")
-
     print(
-        " LANGUAGE DETECTION BACKEND"
+        "======================================"
     )
 
-    print("======================================")
-
-    print("Server running at:")
-
     print(
-        "http://127.0.0.1:5000"
+        " LANGUAGE DETECTION FULL STACK APP"
     )
 
-    print("======================================")
+    print(
+        "======================================"
+    )
+
+    print(
+        "Frontend + Backend running together"
+    )
+
+    print(
+        "======================================"
+    )
 
 
     app.run(
 
-        host="127.0.0.1",
+        host="0.0.0.0",
 
         port=5000,
 
         debug=True
 
     )
-
